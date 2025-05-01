@@ -86,8 +86,7 @@ module ahb_lite_subordinate (
         ERROR_PHASE2
     } state_t;
 
-    state_t current_state;
-    state_t next_state;
+    state_t current_state, next_st;
     logic error;
 
     assign d_mode = hwrite_pipeline;
@@ -139,12 +138,12 @@ module ahb_lite_subordinate (
         if (!n_rst) begin
             current_state <= IDLE;
         end else begin
-            current_state <= next_state;
+            current_state <= next_st;
         end
     end
 
     always_comb begin : NextStateLogic
-        next_state = current_state;
+        next_st = current_state;
 
         case (current_state)
             IDLE: begin
@@ -153,40 +152,40 @@ module ahb_lite_subordinate (
                 (haddr == DATA_BUFFER_ADDR + 1) ||
                 (haddr == DATA_BUFFER_ADDR + 2) ||
                 (haddr == DATA_BUFFER_ADDR + 3))) begin
-                    next_state = ADDR_PHASE;
+                    next_st = ADDR_PHASE;
                 end else if (error) begin
-                    next_state = ERROR_PHASE1;
+                    next_st = ERROR_PHASE1;
                 end
             end 
 
             ADDR_PHASE: begin
                 if (valid_access_pipeline) begin
-                    next_state = DATA_PHASE_B1;
+                    next_st = DATA_PHASE_B1;
                 end
             end 
 
-            ERROR_PHASE1: next_state = ERROR_PHASE2;
+            ERROR_PHASE1: next_st = ERROR_PHASE2;
 
-            ERROR_PHASE2: next_state = IDLE;
+            ERROR_PHASE2: next_st = IDLE;
 
             DATA_PHASE_B1: if (hsize_pipeline == 0) begin
-                next_state = IDLE;
+                next_st = IDLE;
             end else begin
-                next_state = DATA_PHASE_B2;
+                next_st = DATA_PHASE_B2;
             end
 
             DATA_PHASE_B2: 
             if (hsize_pipeline == 2'b10) begin
-                next_state = DATA_PHASE_B3;
+                next_st = DATA_PHASE_B3;
             end else begin
-                next_state = IDLE;
+                next_st = IDLE;
             end
 
-            DATA_PHASE_B3: next_state = DATA_PHASE_B4;
+            DATA_PHASE_B3: next_st = DATA_PHASE_B4;
 
-            DATA_PHASE_B4: next_state = IDLE;
+            DATA_PHASE_B4: next_st = IDLE;
 
-            default: next_state = IDLE;
+            default: next_st = IDLE;
         endcase
     end
 
@@ -197,7 +196,8 @@ module ahb_lite_subordinate (
         hresp = 0;
         get_rx_data = 0;
         store_tx_data = 0;
-        tx_data = 0; 
+        tx_data = 0;
+        data_buffer_reg = 0; 
 
         case (current_state)
             IDLE: begin
@@ -213,8 +213,6 @@ module ahb_lite_subordinate (
                 hresp = 0;
                 if (hwrite_pipeline) begin
                     data_buffer_reg = hwdata;
-                end else begin
-                    get_rx_data = 1;
                 end
             end
             
@@ -235,7 +233,7 @@ module ahb_lite_subordinate (
 
                 if (hwrite_pipeline) begin
                     // Write
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             store_tx_data = 1;
                             tx_data = data_buffer_reg[7:0];
@@ -255,7 +253,7 @@ module ahb_lite_subordinate (
                     endcase
                 end else begin
                     // Read
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             get_rx_data = 1;
                             data_buffer_reg[7:0] = rx_data;
@@ -283,7 +281,7 @@ module ahb_lite_subordinate (
 
                 if (hwrite_pipeline) begin
                     // Write
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             store_tx_data = 1;
                             tx_data = data_buffer_reg[15:8];
@@ -299,7 +297,7 @@ module ahb_lite_subordinate (
                     endcase
                 end else begin
                     // Read
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             get_rx_data = 1;
                             data_buffer_reg[15:8] = rx_data;
@@ -321,19 +319,21 @@ module ahb_lite_subordinate (
 
                 if (hwrite_pipeline) begin
                     // Write
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             store_tx_data = 1;
                             tx_data = data_buffer_reg[23:16];
                         end
+                    default : ;
                     endcase
                 end else begin
                     // Read
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             get_rx_data = 1;
                             data_buffer_reg[23:16] = rx_data;
                         end
+                        default : ;
                     endcase
                 end
             end
@@ -343,19 +343,21 @@ module ahb_lite_subordinate (
 
                 if (hwrite_pipeline) begin
                     // Write
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             store_tx_data = 1;
                             tx_data = data_buffer_reg[31:24];
                         end
+                        default : ;
                     endcase
                 end else begin
                     // Read
-                    case (haddr_pipeline_2)
+                    case (haddr_pipeline)
                         DATA_BUFFER_ADDR: begin
                             get_rx_data = 1;
                             data_buffer_reg[31:24] = rx_data;
                         end
+                        default : ;
                     endcase
                 end
             end
@@ -366,6 +368,7 @@ module ahb_lite_subordinate (
                 get_rx_data = 0;
                 store_tx_data = 0;
                 tx_data = 0; 
+                data_buffer_reg = 0; 
             end
         endcase
     end
@@ -459,7 +462,7 @@ module ahb_lite_subordinate (
             end
             
             STATUS_ADDR + 1: begin
-                if (!hsize_pipeline) // 1-byte read from upper byte
+                if (hsize_pipeline == 0) // 1-byte read from upper byte
                     hrdata = {24'b0, status_reg[15:8]};
             end
             
@@ -525,3 +528,5 @@ module ahb_lite_subordinate (
     end
 
 endmodule
+
+/* verilator coverage_on */
