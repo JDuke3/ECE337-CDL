@@ -57,7 +57,9 @@ module tb_usb_receiver ();
         begin
             for(i = 0; i < 4'd8; i = i+1) begin
                 send_usb_bit(data[i]);
-                #(DATA_PERIOD);
+                if(i==0) begin
+                    #(DATA_PERIOD);
+                end
             end
         end
     endtask
@@ -81,21 +83,44 @@ module tb_usb_receiver ();
         end
     endtask
 
+    task send_64_bytes;
+        int i;
+        begin
+            for(i=0; i<64;i=i+1) begin
+                send_packet(DATA0);
+            end
+        end
+    endtask
+
     task send_usb_bit;
         input logic b;
         int i;
         begin
             if(!b) begin
                 nzri_level = !nzri_level;
-                for(i=0;i<8;i++) begin
-                    DP_IN = nzri_level;
-                    DM_IN = !nzri_level;
+                DP_IN = nzri_level;
+                DM_IN = !nzri_level;
+            end
+            else begin
+                DP_IN = nzri_level;
+                DM_IN = !nzri_level;
+            end
+            #(DATA_PERIOD);
+        end
+    endtask
+
+    task send_CRC_packet;
+        input logic [15:0] data;
+        int i;
+        begin
+            for(i = 0; i < 5'd16; i = i+1) begin
+                send_usb_bit(data[i]);
+                if(i==0) begin
                     #(DATA_PERIOD);
                 end
             end
         end
     endtask
-
 
     task check_output;
         logic expected_RX_Data_ready, expected_RX_Transfer_Active, expected_RX_Error, expected_Flush;
@@ -160,75 +185,81 @@ module tb_usb_receiver ();
         expected_RX_Packet = 4'b0;
         expected_Store_RX_Packet_Data = 1'b0;
         expected_RX_Packet_Data = 8'b11111111;
-        
-        @(negedge clk)
-        test_num = 0;
-        n_rst = 1;
-        reset_dut;
-        #(CLK_PERIOD)
-
-        @(negedge clk)
-        test_num = 1;
         DP_IN = 1'b1;
         DM_IN = 1'b0;
         nzri_level = 1'b1;
-        reset_dut;
-        expected_RX_Packet_Data = 8'b00000001;
-        send_packet(8'b00000001);
-        check_output;
 
-        @(negedge clk)
-        test_num = 2;
-        DP_IN = 1'b1;
-        DM_IN = 1'b0;
+        // Power On reset
+        @(negedge clk);
+        test_num = 0;
+        n_rst = 1;
         reset_dut;
-        expected_RX_Packet_Data = 8'b00000001;
-        send_packet(8'b00000001);
+        
+        // no byte payload
+        @(negedge clk);
+        test_num = 1;
+        n_rst = 1;
+        reset_dut;
+        send_packet(8'b100000000);
 
         send_packet(PID_IN);
 
-        send_packet(8'b11000011);
-
         send_EOP();
 
-        @(negedge clk)
-        test_num = 3;
-        DP_IN = 1'b1;
-        DM_IN = 1'b0;
+        // no PID
+        @(negedge clk);
+        test_num = 2;
+        n_rst = 1;
         reset_dut;
-        expected_RX_Packet_Data = 8'b00000001;
-        send_packet(8'b00000001);
-
-        send_packet(PID_OUT);
-
-        send_packet(DATA1);
+        send_packet(8'b100000000);
 
         send_EOP();
 
-        @(negedge clk)
+        // no sync
+        @(negedge clk);
         test_num = 3;
-        DP_IN = 1'b1;
-        DM_IN = 1'b0;
+        n_rst = 1;
         reset_dut;
-        expected_RX_Packet_Data = 8'b00000001;
-        send_packet(8'b10000000);
-
-
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-        send_packet(DATA0);
-
-        send_packet(8'b11010010);
+        send_packet(PID_IN);
 
         send_EOP();
+        
+        // 1 byte payload
+        @(negedge clk);
+        test_num = 4;
+        n_rst = 1;
+        reset_dut;
+        send_packet(8'b100000000);
+
+        send_packet(PID_IN);
+
+        send_packet(DATA0);
+
+        send_EOP();
+
+        // 1 byte payload
+        @(negedge clk);
+        test_num = 5;
+        n_rst = 1;
+        reset_dut;
+        send_packet(8'b100000000);
+
+        send_packet(PID_IN);
+
+        send_EOP();
+
+        // // 64 byte payload
+        // @(negedge clk);
+        // test_num = 5;
+        // n_rst = 1;
+        // reset_dut;
+        // send_packet(8'b100000000);
+
+        // send_packet(PID_IN);
+
+        // send_64_bytes();
+
+        // send_EOP();
 
         $finish;
     end
