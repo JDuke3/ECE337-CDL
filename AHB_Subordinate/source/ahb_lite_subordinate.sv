@@ -71,6 +71,10 @@ module ahb_lite_subordinate (
     logic valid_access;
     logic raw;
 
+
+    //tx packet fix
+    logic tx_transfer_hold;
+
     typedef enum logic [3:0] {
         IDLE,
         ADDR_PHASE,
@@ -208,7 +212,6 @@ module ahb_lite_subordinate (
                 hready = 0;
                 hresp = 0;
                 if (hwrite_pipeline) begin
-                    store_tx_data = 1;
                     data_buffer_reg = hwdata;
                 end else begin
                     get_rx_data = 1;
@@ -336,12 +339,13 @@ module ahb_lite_subordinate (
             end
 
             DATA_PHASE_B4: begin
-                hready = 1;
+                hready = 0;
 
                 if (hwrite_pipeline) begin
                     // Write
                     case (haddr_pipeline_2)
                         DATA_BUFFER_ADDR: begin
+                            store_tx_data = 1;
                             tx_data = data_buffer_reg[31:24];
                         end
                     endcase
@@ -409,19 +413,28 @@ module ahb_lite_subordinate (
         if (!n_rst) begin
             tx_ctrl_reg <= 0;
             flush_ctrl_reg <= 0;
+            tx_transfer_hold <= 0;
         end else begin
-            // Update the Registers if write
-            if (valid_access_pipeline && hwrite_pipeline && haddr_pipeline == TX_CTRL_ADDR)
-                tx_ctrl_reg <= hwdata[7:0];
-            if (valid_access_pipeline && hwrite_pipeline && haddr_pipeline == FLUSH_CTRL_ADDR)
-                flush_ctrl_reg <= hwdata[7:0];
 
             // Clear the Reg after the packet is sent OR after the buffer is cleared
-            if (tx_ctrl_reg != 0 && !tx_transfer_active)
+            if (tx_ctrl_reg != 0 && !tx_transfer_active && !tx_transfer_hold)
                 tx_ctrl_reg <= 0;
 
             if (flush_ctrl_reg != 0)
                 flush_ctrl_reg <= 0;
+
+            // Update the Registers if write
+            if (valid_access_pipeline && hwrite_pipeline && haddr_pipeline == TX_CTRL_ADDR) begin
+                tx_transfer_hold <= 1;
+                tx_ctrl_reg <= hwdata[7:0];
+            end
+            else begin
+                tx_transfer_hold <= 0;
+            end
+            if (valid_access_pipeline && hwrite_pipeline && haddr_pipeline == FLUSH_CTRL_ADDR)
+                flush_ctrl_reg <= hwdata[15:8];
+
+            
         end
     end
 
